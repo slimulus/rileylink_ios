@@ -195,6 +195,16 @@ public class OmnipodPumpManager: RileyLinkPumpManager {
             observer.pumpManager(self, didUpdate: status, oldStatus: oldStatus)
         }
     }
+    
+    private func logDeviceCommunication(_ message: String, type: DeviceLogEntryType = .send) {
+        var podAddress = "noPod"
+        if let podState = self.state.podState {
+            podAddress = String(format:"%04X", podState.address)
+        }
+        self.pumpDelegate.notify { (delegate) in
+            delegate?.deviceManager(self, logEventForDeviceIdentifier: podAddress, type: type, message: message, completion: nil)
+        }
+    }
 
     private let pumpDelegate = WeakSynchronizedDelegate<PumpManagerDelegate>()
 
@@ -431,7 +441,6 @@ extension OmnipodPumpManager {
             self.podComms.messageLogger = self
 
             state.podState = nil
-            state.messageLog.erase()
             state.expirationReminderDate = nil
         }
 
@@ -549,7 +558,7 @@ extension OmnipodPumpManager {
         case .success(true):
             self.log.default("Pairing pod before priming")
 
-            self.podComms.pair(using: deviceSelector, timeZone: .currentFixed, messageLogger: self) { (session) in
+            self.podComms.assignAddressAndSetupPod(using: deviceSelector, timeZone: .currentFixed, messageLogger: self) { (session) in
                 // Calls completion
                 configureAndPrimeSession(session)
             }
@@ -1601,16 +1610,12 @@ extension OmnipodPumpManager: PumpManager {
 extension OmnipodPumpManager: MessageLogger {
     func didSend(_ message: Data) {
         log.default("didSend: %{public}@", message.hexadecimalString)
-        setState { (state) in
-            state.messageLog.record(MessageLogEntry(messageDirection: .send, timestamp: Date(), data: message))
-        }
+        self.logDeviceCommunication(message.hexadecimalString, type: .send)
     }
     
     func didReceive(_ message: Data) {
         log.default("didReceive: %{public}@", message.hexadecimalString)
-        setState { (state) in
-            state.messageLog.record(MessageLogEntry(messageDirection: .receive, timestamp: Date(), data: message))
-        }
+        self.logDeviceCommunication(message.hexadecimalString, type: .receive)
     }
 }
 

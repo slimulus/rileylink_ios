@@ -29,7 +29,7 @@ public struct PodInfoPulseLogRecent : PodInfo {
         let nLogEntriesReturned = nLogBytesReturned / 4
         let lastPumpEntry = (UInt16(encodedData[1]) << 8) | UInt16(encodedData[2])
         if lastPumpEntry < maxPumpEntriesReturned && nLogEntriesReturned < lastPumpEntry {
-            throw MessageBlockError.notEnoughData // small count and we didn't recieve them all
+            throw MessageBlockError.notEnoughData // small count and we didn't receive them all
         }
         self.data           = encodedData
         self.indexLastEntry = lastPumpEntry

@@ -81,6 +81,8 @@ class MessageTests: XCTestCase {
             XCTAssertEqual(0x1f08ced2, config.address)
             XCTAssertEqual(42560, config.lot)
             XCTAssertEqual(621607, config.tid)
+            XCTAssertEqual(28, config.rssi!)
+            XCTAssertEqual(2, config.gain!)
         } catch (let error) {
             XCTFail("message decoding threw error: \(error)")
         }
@@ -105,7 +107,7 @@ class MessageTests: XCTestCase {
         do {
             let message = try Message(encodedData: Data(hexadecimalString: "ffffffff04170115020700020700020e0000a5ad00053030971f08686301fd")!)
             let config = message.messageBlocks[0] as! VersionResponse
-            XCTAssertEqual(.pairingExpired, config.setupState)
+            XCTAssertEqual(.activationTimeExceeded, config.podProgressStatus)
         } catch (let error) {
             XCTFail("message decoding threw error: \(error)")
         }

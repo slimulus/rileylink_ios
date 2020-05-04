@@ -12,6 +12,7 @@ public enum MessageError: Error {
     case notEnoughData
     case invalidCrc
     case invalidSequence
+    case invalidAddress(badAddress: UInt32)
     case parsingError(offset: Int, data: Data, error: Error)
     case unknownValue(value: UInt8, typeDescription: String)
     case validationFailed(description: String)
@@ -99,6 +100,13 @@ struct Message {
             return nil
         }
     }
+}
+
+// returns the encoded length of a message
+public func messageLength(message: [MessageBlock]) -> Int {
+    let message = Message(address: 0, messageBlocks: message, sequenceNum: 0)
+    let encodedData = message.encoded()
+    return encodedData.count
 }
 
 extension Message: CustomDebugStringConvertible {

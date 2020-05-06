@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os.log
 
 fileprivate let assignAddressVersionLength: UInt8 = 0x15
 fileprivate let setupPodVersionLength: UInt8 = 0x1B
@@ -33,7 +34,7 @@ public struct VersionResponse : MessageBlock {
 
     public let pmVersion: FirmwareVersion
     public let piVersion: FirmwareVersion
-    public let setupState: SetupState
+    public let podProgressStatus: PodProgressStatus
     public let lot: UInt32
     public let tid: UInt32
     public let gain: UInt8? // Only in the shorter assignAddress response
@@ -63,8 +64,8 @@ public struct VersionResponse : MessageBlock {
 
             pmVersion = FirmwareVersion(encodedData: encodedData.subdata(in: 2..<5))
             piVersion = FirmwareVersion(encodedData: encodedData.subdata(in: 5..<8))
-            if let podProgress = SetupState(rawValue: encodedData[9]) {
-                self.setupState = podProgress
+            if let podProgress = PodProgressStatus(rawValue: encodedData[9]) {
+                self.podProgressStatus = podProgress
             } else {
                 throw MessageBlockError.parseError
             }
@@ -89,8 +90,8 @@ public struct VersionResponse : MessageBlock {
 
             pmVersion = FirmwareVersion(encodedData: encodedData.subdata(in: 9..<12))
             piVersion = FirmwareVersion(encodedData: encodedData.subdata(in: 12..<15))
-            if let podProgress = SetupState(rawValue: encodedData[16]) {
-                self.setupState = podProgress
+            if let podProgress = PodProgressStatus(rawValue: encodedData[16]) {
+                self.podProgressStatus = podProgress
             } else {
                 throw MessageBlockError.parseError
             }
@@ -104,12 +105,35 @@ public struct VersionResponse : MessageBlock {
             throw MessageBlockError.parseError
         }
     }
+}
 
-    public var isAssignAddressVersionResponse: Bool {
-        return self.data.count == assignAddressVersionLength + 2
+private func verifyNotFault(response: Message, log: OSLog) throws {
+    if let fault = response.fault {
+        log.error("Pod Fault: %{public}@", String(describing: fault))
+        throw PodCommsError.podFault(fault: fault)
     }
+}
 
-    public var isSetupPodVersionResponse: Bool {
-        return self.data.count == setupPodVersionLength + 2
+func assignAddressResponse(response: Message, log: OSLog) throws -> VersionResponse {
+    try verifyNotFault(response: response, log: log)
+    guard let config = response.messageBlocks[0] as? VersionResponse,
+        config.data.count == assignAddressVersionLength + 2
+    else {
+        log.error("unexpected AssignAddress response: %{public}@", String(describing: response))
+        let responseType = response.messageBlocks[0].blockType
+        throw PodCommsError.unexpectedResponse(response: responseType)
     }
+    return config
+}
+
+func setupPodResponse(response: Message, log: OSLog) throws -> VersionResponse {
+    try verifyNotFault(response: response, log: log)
+    guard let config = response.messageBlocks[0] as? VersionResponse,
+        config.data.count == setupPodVersionLength + 2
+    else {
+        log.error("unexpected SetupPod response: %{public}@", String(describing: response))
+        let responseType = response.messageBlocks[0].blockType
+        throw PodCommsError.unexpectedResponse(response: responseType)
+    }
+    return config
 }

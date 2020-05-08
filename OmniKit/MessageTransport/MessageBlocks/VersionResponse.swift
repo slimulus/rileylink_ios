@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import os.log
 
 fileprivate let assignAddressVersionLength: UInt8 = 0x15
 fileprivate let setupPodVersionLength: UInt8 = 0x1B
@@ -107,33 +106,22 @@ public struct VersionResponse : MessageBlock {
     }
 }
 
-private func verifyNotFault(response: Message, log: OSLog) throws {
-    if let fault = response.fault {
-        log.error("Pod Fault: %{public}@", String(describing: fault))
-        throw PodCommsError.podFault(fault: fault)
+func assignAddressResponse(response: Message) throws -> VersionResponse {
+    guard let assignAddressResponse = response.messageBlocks[0] as? VersionResponse else {
+        throw MessageError.validationFailed(description: "not a valid VersionResponse")
     }
+    guard assignAddressResponse.data.count == assignAddressVersionLength + 2 else {
+        throw MessageError.validationFailed(description: "not a AssignAddress VersionResponse")
+    }
+    return assignAddressResponse
 }
 
-func assignAddressResponse(response: Message, log: OSLog) throws -> VersionResponse {
-    try verifyNotFault(response: response, log: log)
-    guard let config = response.messageBlocks[0] as? VersionResponse,
-        config.data.count == assignAddressVersionLength + 2
-    else {
-        log.error("unexpected AssignAddress response: %{public}@", String(describing: response))
-        let responseType = response.messageBlocks[0].blockType
-        throw PodCommsError.unexpectedResponse(response: responseType)
+func setupPodResponse(response: Message) throws -> VersionResponse {
+    guard let setupPodResponse = response.messageBlocks[0] as? VersionResponse else {
+        throw MessageError.validationFailed(description: "not a valid VersionResponse")
     }
-    return config
-}
-
-func setupPodResponse(response: Message, log: OSLog) throws -> VersionResponse {
-    try verifyNotFault(response: response, log: log)
-    guard let config = response.messageBlocks[0] as? VersionResponse,
-        config.data.count == setupPodVersionLength + 2
-    else {
-        log.error("unexpected SetupPod response: %{public}@", String(describing: response))
-        let responseType = response.messageBlocks[0].blockType
-        throw PodCommsError.unexpectedResponse(response: responseType)
+    guard setupPodResponse.data.count == setupPodVersionLength + 2 else {
+        throw MessageError.validationFailed(description: "not a SetupPod VersionResponse")
     }
-    return config
+    return setupPodResponse
 }

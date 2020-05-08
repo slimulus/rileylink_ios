@@ -88,7 +88,12 @@ class PodComms: CustomDebugStringConvertible {
             throw error
         }
 
-        let config = try assignAddressResponse(response: response, log: self.log)
+        if let fault = response.fault {
+            self.log.error("Pod Fault: %{public}@", String(describing: fault))
+            throw PodCommsError.podFault(fault: fault)
+        }
+
+        let config = try assignAddressResponse(response: response)
         
         guard config.address == address else {
             self.log.error("assignAddress response with incorrect address %{public}@: %{public}@", String(format: "%04X", config.address), String(describing: response))
@@ -157,7 +162,12 @@ class PodComms: CustomDebugStringConvertible {
             throw error
         }
 
-        let config = try setupPodResponse(response: response, log: self.log)
+        if let fault = response.fault {
+            self.log.error("Pod Fault: %{public}@", String(describing: fault))
+            throw PodCommsError.podFault(fault: fault)
+        }
+
+        let config = try setupPodResponse(response: response)
 
         guard config.address == podState.address else {
             self.log.error("SetupPod response with incorrect address %{public}@: %{public}@", String(format: "%04X", config.address), String(describing: response))

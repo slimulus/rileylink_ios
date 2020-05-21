@@ -30,6 +30,7 @@ public enum PodCommsError: Error {
     case commsError(error: Error)
     case commandError(errorCode: UInt8)
     case debugFault(str: String)
+    case podChange
 }
 
 extension PodCommsError: LocalizedError {
@@ -72,6 +73,8 @@ extension PodCommsError: LocalizedError {
             return String(format: LocalizedString("Command error %1$u", comment: "Format string for command error code (1: error code number)"), errorCode)
         case .debugFault(let str):
             return str
+        case .podChange:
+            return LocalizedString("Unexpected pod change", comment: "Format string for unexpected pod change")
         }
     }
     
@@ -117,6 +120,8 @@ extension PodCommsError: LocalizedError {
             return nil
         case .debugFault:
             return nil
+        case .podChange:
+            return LocalizedString("Please bring only original pod in range or deactivate original pod", comment: "Recovery suggestion on unexpected pod change")
         }
     }
 }

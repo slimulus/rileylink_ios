@@ -11,7 +11,8 @@ import RileyLinkBLEKit
 import LoopKit
 import os.log
 
-fileprivate var rssiTesting: Bool = false // TESTING, whether to throw after printing RSSI value
+fileprivate var rssiTesting: Bool = false           // TESTING, whether to display error message with RSSI value returned by AssignAddress
+fileprivate var alwaysAssignAddress: Bool = false   // TESTING, whether to always do an AssignAddress on pairing retries
 
 protocol PodCommsDelegate: class {
     func podComms(_ podComms: PodComms, didChange podState: PodState)
@@ -50,8 +51,9 @@ class PodComms: CustomDebugStringConvertible {
 
         // If we previously had podState, verify that we still dealing with the same pod
         if let podState = self.podState, (podState.lot != config.lot || podState.tid != config.tid) {
-                // Looks like the pod was switched out on during a retry!
-            throw MessageError.validationFailed(description: String(format: "received invalid pod lot %u tid %u response, expected lot %u tid %u", config.lot, config.tid, podState.lot, podState.tid))
+            // a new pod, could be a pod change w/o deactivation (or we're picking up some other pairing pod!)
+            self.log.error("received pod response with lot %u tid %u, expected lot %u tid %u", config.lot, config.tid, podState.lot, podState.tid)
+            throw PodCommsError.podChange
         }
     }
 
@@ -185,7 +187,9 @@ class PodComms: CustomDebugStringConvertible {
                 do {
                     self.configureDevice(device, with: commandSession)
 
-                    try self.assignAddress(address: address, commandSession: commandSession)
+                    if self.podState == nil || alwaysAssignAddress {
+                        try self.assignAddress(address: address, commandSession: commandSession)
+                    }
                     
                     guard self.podState != nil else {
                         block(.failure(PodCommsError.noPodPaired))

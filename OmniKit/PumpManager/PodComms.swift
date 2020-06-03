@@ -11,8 +11,10 @@ import RileyLinkBLEKit
 import LoopKit
 import os.log
 
-fileprivate var rssiTesting: Bool = false           // TESTING, whether to display error message with RSSI value returned by AssignAddress
-fileprivate var alwaysAssignAddress: Bool = false   // TESTING, whether to always do an AssignAddress on pairing retries
+fileprivate var rssiTesting: Bool = false                   // TESTING, whether to just display error message with RSSI value w/o pairing
+fileprivate var alwaysAssignAddress: Bool = true            // TESTING, whether to always do an AssignAddress on pairing retries
+fileprivate var continuousSeqNums: Bool = true              // TESTING, whether to try to continue sequence #'s on AssignAddress retries
+fileprivate var alternateStartingPacketNumber: Bool = true  // TESTING, whether to alternate the starting packet #
 
 protocol PodCommsDelegate: class {
     func podComms(_ podComms: PodComms, didChange podState: PodState)
@@ -59,10 +61,21 @@ class PodComms: CustomDebugStringConvertible {
 
     private func assignAddress(address: UInt32, commandSession: CommandSession) throws {
         commandSession.assertOnSessionQueue()
+        static var startingPacketNumber: Int = 0
         
         self.log.debug("Attempting pairing with address %{public}@", String(format: "%04X", address))
-
-        let messageTransportState = MessageTransportState(packetNumber: 0, messageNumber: 0)
+        let packetNumber, messageNumber: Int
+        if let podState = self.podState, continuousSeqNums == true {
+            packetNumber = podState.messageTransportState.packetNumber
+            messageNumber = podState.messageTransportState.messageNumber
+        } else {
+            packetNumber = startingPacketNumber
+            if alternateStartingPacketNumber {
+                startingPacketNumber = (startingPacketNumber + 1) & 1
+            }
+            messageNumber = 0
+        }
+        let messageTransportState = MessageTransportState(packetNumber: packetNumber, messageNumber: messageNumber)
         
         let transport = PodMessageTransport(session: commandSession, address: 0xffffffff, ackAddress: address, state: messageTransportState)
         transport.messageLogger = messageLogger
@@ -91,6 +104,9 @@ class PodComms: CustomDebugStringConvertible {
                     // we have other problems (the pod is in a bogus ack condition or it was run with other info).
                     // Continue on to see if it's the former case if we can actually start the priming.
                     self.log.default("assignAddress received ack for address %{public}@, continuing...", String(format: "%04X", address))
+                    if rssiTesting {
+                        throw PodCommsError.debugFault(str: String(format: "Received AssignAddress ack with podState"))
+                    }
                     return
                 }
                 // We received an ack from an assignAddress and we don't have any pod state.
@@ -111,7 +127,7 @@ class PodComms: CustomDebugStringConvertible {
         try verifyPodInfo(address: address, config: config)
         
         self.log.default("AssignAddress response %{public}@", String(describing: config))
-        if rssiTesting {
+        if rssiTesting && continuousSeqNums == false {
             throw PodCommsError.debugFault(str: String(format: "RSSI=%u, gain=%u", config.rssi!, config.gain!))
         }
         
@@ -126,6 +142,10 @@ class PodComms: CustomDebugStringConvertible {
                 packetNumber: transport.packetNumber,
                 messageNumber: transport.messageNumber
             )
+        }
+
+        if rssiTesting {
+            throw PodCommsError.debugFault(str: String(format: "RSSI=%u, gain=%u", config.rssi!, config.gain!))
         }
     }
     

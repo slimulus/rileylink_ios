@@ -11,6 +11,9 @@ import os.log
 
 import RileyLinkBLEKit
 
+fileprivate var acceptFFFFFFFF: Bool = true // whether to accept packets with an addresss of FFFFFFF to match S08
+var percentLostPackets: Float = 0.0 // XXX % of packets to fake drop, 0.25 means drop 1/4 of packets
+
 protocol MessageLogger: class {
     // Comms logging
     func didSend(_ message: Data)
@@ -146,7 +149,7 @@ class PodMessageTransport: MessageTransport {
     /// Encodes and sends a packet to the pod, and receives and decodes its response
     ///
     /// - Parameters:
-    ///   - message: The packet to send
+    ///   - packet: The packet to send
     ///   - repeatCount: Number of times to repeat packet before listening for a response. 0 = send once and do not repeat.
     ///   - packetResponseTimeout: The amount of time to wait before retrying
     ///   - exchangeTimeout: The amount of time to continue retrying before giving up
@@ -180,15 +183,23 @@ class PodMessageTransport: MessageTransport {
                     continue
                 }
 
-                guard candidatePacket.address == packet.address else {
-                    log.default("Address %@ does not match %@", String(describing: candidatePacket.address), String(describing: packet.address))
+                guard candidatePacket.address == packet.address || (candidatePacket.address == 0xFFFFFFFF && acceptFFFFFFFF) else {
+                    log.default("Address %{public}@ does not match %{public}@", String(format: "%04X", candidatePacket.address), String(format: "%04X", packet.address))
                     continue
                 }
                 
                 guard candidatePacket.sequenceNum == ((packet.sequenceNum + 1) & 0b11111) else {
-                    log.default("Sequence %@ does not match %@", String(describing: candidatePacket.sequenceNum), String(describing: ((packet.sequenceNum + 1) & 0b11111)))
+                    log.default("Sequence %{public}@ does not match %{public}@", String(describing: candidatePacket.sequenceNum), String(describing: ((packet.sequenceNum + 1) & 0b11111)))
                     continue
                 }
+// XXX
+                if percentLostPackets > 0.0 {
+                    if Float.random(in: 0 ..< 1) <= percentLostPackets {
+                        log.default("exchangePackets: FAKE DROP packet %@", String(describing: candidatePacket))
+                        continue
+                    }
+                }
+// XXX
                 
                 // Once we have verification that the POD heard us, we can increment our counters
                 incrementPacketNumber()
@@ -248,12 +259,15 @@ class PodMessageTransport: MessageTransport {
                     do {
                         let msg = try Message(encodedData: responseData)
                         log.default("Recv(Hex): %@", responseData.hexadecimalString)
-                        if msg.sequenceNum == messageNumber {
-                            messageLogger?.didReceive(responseData)
-                            return msg
-                        } else {
+                        guard msg.address == address else {
+                            log.error("Message address %{public}@ does not match expected %{public}@", String(format: "%04X", msg.address), String(format: "%04X", address))
+                            throw MessageError.invalidAddress(badAddress: msg.address)
+                        }
+                        guard msg.sequenceNum == messageNumber else {
                             throw MessageError.invalidSequence
                         }
+                        messageLogger?.didReceive(responseData)
+                        return msg
                     } catch MessageError.notEnoughData {
                         log.debug("Sending ACK for CON")
                         let conPacket = try self.exchangePackets(packet: makeAckPacket(), repeatCount: 3, preambleExtension:TimeInterval(milliseconds: 40))

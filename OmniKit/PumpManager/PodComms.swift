@@ -16,6 +16,8 @@ fileprivate var alwaysAssignAddress: Bool = true            // TESTING, whether 
 fileprivate var continuousSeqNums: Bool = true              // TESTING, whether to try to continue sequence #'s on AssignAddress retries
 fileprivate var alternateStartingPacketNumber: Bool = true  // TESTING, whether to alternate the starting packet #
 
+fileprivate var startingPacketNumber: Int = 0
+
 protocol PodCommsDelegate: class {
     func podComms(_ podComms: PodComms, didChange podState: PodState)
 }
@@ -61,7 +63,6 @@ class PodComms: CustomDebugStringConvertible {
 
     private func assignAddress(address: UInt32, commandSession: CommandSession) throws {
         commandSession.assertOnSessionQueue()
-        static var startingPacketNumber: Int = 0
         
         self.log.debug("Attempting pairing with address %{public}@", String(format: "%04X", address))
         let packetNumber, messageNumber: Int

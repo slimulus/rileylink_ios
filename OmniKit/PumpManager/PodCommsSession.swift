@@ -280,16 +280,15 @@ public class PodCommsSession {
         throw PodCommsError.nonceResyncFailed
     }
 
-    // Returns time at which prime is expected to finish.
+    // Returns the time interval from now when the prime is expected to finish.
+    // If called before the pod is fully paired (i.e., the pod progress is < 3),
+    // the pod will not respond to any of the commands in this routine.
     public func prime() throws -> TimeInterval {
         let primeDuration = TimeInterval(seconds: 55)   // a bit longer than (Pod.primeUnits / Pod.primeDeliveryRate)
 
-        // Must skip the fault config and alert setup commands if we've already done them or the pod will fault
-        if podState.setupProgress != .startingPrime && podState.setupProgress != .priming {
-            // N.B. If the pod progress is < 3 (.pairingSuccess), the pod will not respond to the following two commands
-
-            // The FaultConfig command must be run here when the pod progress is not more than 3 (.pairingSuccess) or pod will fault.
-            // This command sets internal pod variables to effectively disable $6x faults which can occur more often with a 0 TBR.
+        // Must only do the fault config command if we haven't starting priming or the pod will fault!
+        if podState.setupProgress == .podConfigured || podState.setupProgress == .addressAssigned {
+            // FaultConfigCommand sets internal pod variables to effectively disable $6x faults which occur more often with a 0 TBR
             let _: StatusResponse = try send([FaultConfigCommand(nonce: podState.currentNonce, tab5Sub16: 0, tab5Sub17: 0)])
 
             // Set up an alert for a reminder beep every 5 minutes for an hour until the setup process finishes as per the PDM
@@ -368,6 +367,7 @@ public class PodCommsSession {
         }
     }
 
+    // Returns the time interval from now when the cannula insertion bolus is expected to finish.
     public func insertCannula() throws -> TimeInterval {
         let insertionWait: TimeInterval = .seconds(Pod.cannulaInsertionUnits / Pod.primeDeliveryRate)
 

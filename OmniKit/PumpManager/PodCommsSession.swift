@@ -633,6 +633,10 @@ public class PodCommsSession {
         return statusResponse
     }
 
+    public func finalizeFinishedDoses() {
+        podState.finalizeFinishedDoses()
+    }
+
     @discardableResult
     public func readPulseLogsRequest(podInfoResponseSubType: PodInfoResponseSubType, beepMessage: MessageBlock? = nil) throws -> PodInfoResponse {
         var blocksToSend: [MessageBlock] = [GetStatusCommand(podInfoType: podInfoResponseSubType)]

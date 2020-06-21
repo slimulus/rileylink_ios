@@ -184,10 +184,11 @@ public struct PodState: RawRepresentable, Equatable, CustomDebugStringConvertibl
 
         let deliveryStatus = statusResponse.deliveryStatus
         if unfinalizedBolus == nil && deliveryStatus.bolusing {
-            // A bolus is currently in progress with no unfinalizedBolus. This should only be possible if Loop
-            // Loop was stopped or crashed immediately after sending a bolus command and now Loop is restarting.
-            // Create an unfinalizedBolus here so that on app restart, Loop will have the correct bolus state.
-            unfinalizedBolus = UnfinalizedDose(bolusAmount: statusResponse.insulinNotDelivered, startTime: Date(), scheduledCertainty: .certain)
+            // Between bluetooth and the radio and firmware, about 1.2s on average passes before we start tracking
+            let commsOffset = TimeInterval(seconds: -1.5)
+
+            // Just verified that a bolus had actually been started (could even potentially be after a Loop restart)
+            unfinalizedBolus = UnfinalizedDose(bolusAmount: statusResponse.insulinNotDelivered, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
         } else if let bolus = unfinalizedBolus, bolus.scheduledCertainty == .uncertain {
             if deliveryStatus.bolusing {
                 // Bolus did schedule

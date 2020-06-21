@@ -437,7 +437,6 @@ public class PodCommsSession {
         case uncertainFailure(error: PodCommsError)
     }
 
-    
     public func bolus(units: Double, acknowledgementBeep: Bool = false, completionBeep: Bool = false, programReminderInterval: TimeInterval = 0) -> DeliveryCommandResult {
         
         let timeBetweenPulses = TimeInterval(seconds: Pod.secondsPerBolusPulse)
@@ -448,13 +447,10 @@ public class PodCommsSession {
             return DeliveryCommandResult.certainFailure(error: .unfinalizedBolus)
         }
         
-        // Between bluetooth and the radio and firmware, about 1.2s on average passes before we start tracking
-        let commsOffset = TimeInterval(seconds: -1.5)
-        
         let bolusExtraCommand = BolusExtraCommand(units: units, timeBetweenPulses: timeBetweenPulses, acknowledgementBeep: acknowledgementBeep, completionBeep: completionBeep, programReminderInterval: programReminderInterval)
         do {
             let statusResponse: StatusResponse = try send([bolusScheduleCommand, bolusExtraCommand])
-            podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
+            podState.updateFromStatusResponse(statusResponse) // will initialize podState.unfinalizedBolus
             return DeliveryCommandResult.success(statusResponse: statusResponse)
         } catch PodCommsError.nonceResyncFailed {
             return DeliveryCommandResult.certainFailure(error: PodCommsError.nonceResyncFailed)
@@ -469,9 +465,8 @@ public class PodCommsSession {
                 podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date(), scheduledCertainty: .uncertain)
                 return DeliveryCommandResult.uncertainFailure(error: podCommsError)
             }
-            if status.deliveryStatus.bolusing {
+            if podState.unfinalizedBolus != nil {
                 self.log.debug("getStatus resolved bolus uncertainty (succeeded)")
-                podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
                 return DeliveryCommandResult.success(statusResponse: status)
             } else {
                 self.log.debug("getStatus resolved bolus uncertainty (failed)")

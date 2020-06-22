@@ -1150,8 +1150,8 @@ extension OmnipodPumpManager {
                     let beepConfigType: BeepConfigType = enabled ? .bipBip : .beep
                     let beepMessage = self.confirmationMessage(beepConfigType: beepConfigType)
                     if enabled {
-                        try session.setPodLowReserviorAlert(level: defaultPodLowReservoirLevel)
-                        try session.setPodExpirationAlert(expirationReminderDate: self.expirationReminderDate, beepMessage: beepMessage)
+                        try session.setPodExpirationAlert(expirationReminderDate: self.expirationReminderDate)
+                        try session.setPodLowReserviorAlert(level: defaultPodLowReservoirLevel, beepMessage: beepMessage)
                     } else {
                         try session.clearOptionalPodAlarms(beepMessage: beepMessage)
                     }

@@ -359,7 +359,7 @@ class OmnipodSettingsViewController: RileyLinkSettingsViewController {
                 
                 if podState == nil {
                     cell.textLabel?.text = LocalizedString("Pair New Pod", comment: "The title of the command to pair new pod")
-                } else if podState?.fault != nil {
+                } else if let podState = podState, podState.isFaulted {
                     cell.textLabel?.text = LocalizedString("Replace Pod Now", comment: "The title of the command to replace pod when there is a pod fault")
                 } else if let podState = podState, podState.unfinishedPairing {
                     cell.textLabel?.text = LocalizedString("Finish pod setup", comment: "The title of the command to finish pod setup")
@@ -520,7 +520,7 @@ class OmnipodSettingsViewController: RileyLinkSettingsViewController {
                 let vc: UIViewController
                 if podState == nil || podState!.setupProgress.primingNeeded {
                     vc = PodReplacementNavigationController.instantiateNewPodFlow(pumpManager)
-                } else if podState?.fault != nil {
+                } else if let podState = podState, podState.isFaulted {
                     vc = PodReplacementNavigationController.instantiatePodReplacementFlow(pumpManager)
                 } else if let podState = podState, podState.unfinishedPairing {
                     vc = PodReplacementNavigationController.instantiateInsertCannulaFlow(pumpManager)

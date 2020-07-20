@@ -679,7 +679,7 @@ extension OmnipodPumpManager {
 
     // returns a suitable BeepConfig command message if the pod isn't faulted and Confirmation Beeps are enabled
     private func confirmationMessage(beepConfigType: BeepConfigType) -> MessageBlock? {
-        if self.state.podState?.fault != nil || self.confirmationBeeps == false {
+        if let podState = self.state.podState, podState.isFaulted == true || self.confirmationBeeps == false {
             return nil
         }
         let basalCompletionBeep = self.confirmationBeeps
@@ -1062,7 +1062,7 @@ extension OmnipodPumpManager {
             completion(String(describing: OmnipodPumpManagerError.noPodPaired))
             return
         }
-        if self.state.podState?.fault == nil && self.state.podState?.unfinalizedBolus?.isFinished == false {
+        if self.state.podState?.isFaulted == false && self.state.podState?.unfinalizedBolus?.isFinished == false {
             self.log.info("Skipping Read Pulse Log due to bolus still in progress.")
             completion(String(describing: PodCommsError.unfinalizedBolus))
             return

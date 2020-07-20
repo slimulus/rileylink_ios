@@ -11,8 +11,12 @@ import os.log
 
 import RileyLinkBLEKit
 
-fileprivate var acceptFFFFFFFF: Bool = true // whether to accept packets with an addresss of FFFFFFF to match S08
-var percentLostPackets: Float = 0.0 // TESTING, percentage of packets to fake drop, 0.25 means drop 1/4 of packets
+var acceptFFFFFFFF: Bool = true             // TESTING, whether to accept packets with an addresss of FFFFFFF to match the S08
+var percentLostPackets: Float = 0.0         // TESTING, % of packets to fake drop, 0.25 means drop 1/4 of packets
+var dontDropAckPackets: Bool = true         // TESTING, whether to drop ACK packets for FAKE Lost Packets
+var dontDropConPackets: Bool = true         // TESTING, whether to drop CON packets for FAKE Lost Packets
+var onlyDropConPackets: Bool = false        // TESTING, whether to only drop incoming CON packets for FAKE Lost Packets
+var dontSendAckPackets: Bool = false        // TESTING, whether to actually send ACK packets in response to data received
 
 protocol MessageLogger: class {
     // Comms logging
@@ -128,6 +132,14 @@ class PodMessageTransport: MessageTransport {
         
         var lastHeardAt = Date()
         let quietWindow = TimeInterval(milliseconds: 300)
+        if dontSendAckPackets {
+            let fakeAckTimeMS: UInt32 = 700
+            log.default("FAKE ackUntilQuiet send with packet # %u with a wait of %u milliseconds", packetNumber, fakeAckTimeMS)
+            usleep(fakeAckTimeMS * 1000)
+            incrementPacketNumber()
+            log.default("FAKE ackUntilQuiet incremented packet # to %u after wait of %u milliseconds", packetNumber, fakeAckTimeMS)
+            return
+        }
         while lastHeardAt.timeIntervalSinceNow > -quietWindow {
             do {
                 let rfPacket = try session.sendAndListen(packetData, repeatCount: 1, timeout: quietWindow, retryCount: 0, preambleExtension: TimeInterval(milliseconds: 40))
@@ -190,10 +202,34 @@ class PodMessageTransport: MessageTransport {
                 
                 guard candidatePacket.sequenceNum == ((packet.sequenceNum + 1) & 0b11111) else {
                     log.default("Sequence %{public}@ does not match %{public}@", String(describing: candidatePacket.sequenceNum), String(describing: ((packet.sequenceNum + 1) & 0b11111)))
+                    messageLogger?.didReceive(candidatePacket.encoded()) // log the packet with the mismatched sequence #
                     continue
                 }
+
+                // For pairing commands it's possible have ack packets with the wrong address if the pod gets in some confused state.
+                // Also this could happen in weird cases with two nearby pairing pods or another degenerate pod running with a
+                // packet address of $ffffffff. Not sure what to do if this is detected. For now, just log the condition.
+                if candidatePacket.address == 0xFFFFFFFF && candidatePacket.packetType == .ack {
+                    if candidatePacket.data.count >= 4 {
+                        let candidatePacketAckAddress = candidatePacket.data[0...].toBigEndian(UInt32.self)
+                        if candidatePacketAckAddress != ackAddress {
+                            log.error("exchangePackets: received ACK packet %@ with address of %{public}@ instead of expected %{public}@",
+                              String(describing: candidatePacket), String(format: "%04X", candidatePacket.address), String(format: "%04X", ackAddress))
+                        }
+                    } else {
+                        log.error("exchangePackets: received ACK packet %@ with unexpected short data.count value of %u",
+                          String(describing: candidatePacket), candidatePacket.data.count)
+                    }
+                }
+
                 if percentLostPackets > 0.0 {
-                    if Float.random(in: 0 ..< 1) <= percentLostPackets {
+                    if candidatePacket.packetType != .con && onlyDropConPackets {
+                        log.default("exchangePackets: no FAKE drop of non CON packet %@", String(describing: candidatePacket))
+                    } else if candidatePacket.packetType == .con && dontDropConPackets {
+                        log.default("exchangePackets: no FAKE drop of CON packet %@", String(describing: candidatePacket))
+                    } else if candidatePacket.packetType == .ack && dontDropAckPackets {
+                        log.default("exchangePackets: no FAKE drop of ACK packet %@", String(describing: candidatePacket))
+                    } else if Float.random(in: 0 ..< 1) <= percentLostPackets {
                         log.default("exchangePackets: FAKE DROP packet %@", String(describing: candidatePacket))
                         continue
                     }
@@ -267,6 +303,13 @@ class PodMessageTransport: MessageTransport {
                         messageLogger?.didReceive(responseData)
                         return msg
                     } catch MessageError.notEnoughData {
+                        if dontSendAckPackets {
+                            let fakeAckConTimeMS: UInt32 = 700
+                            log.default("FAKE Sending ACK for CON with packet # %u, waiting %u milliseconds before throwing noResponse", packetNumber, fakeAckConTimeMS)
+                            usleep(fakeAckConTimeMS * 1000)
+                            log.default("FAKE Sending ACK for CON throwing noResponse after wait of %u milliseconds", fakeAckConTimeMS)
+                            throw PodCommsError.noResponse
+                        }
                         log.debug("Sending ACK for CON")
                         let conPacket = try self.exchangePackets(packet: makeAckPacket(), repeatCount: 3, preambleExtension:TimeInterval(milliseconds: 40))
                         

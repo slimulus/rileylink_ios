@@ -15,10 +15,13 @@ import os.log
 import AudioToolbox
 
 fileprivate let SystemSound_alarm: SystemSoundID = 1304
+fileprivate var mimicPDMPairingUI: Bool = true
 
 class PairPodSetupViewController: SetupTableViewController {
     
     var rileyLinkPumpManager: RileyLinkPumpManager!
+    
+    var previouslyEncounteredWeakComms: Bool = false
     
     var pumpManager: OmnipodPumpManager! {
         didSet {
@@ -80,7 +83,6 @@ class PairPodSetupViewController: SetupTableViewController {
     private enum State {
         case initial
         case pairing
-        case pairingRetry
         case priming(finishTime: TimeInterval)
         case fault
         case ready
@@ -101,11 +103,6 @@ class PairPodSetupViewController: SetupTableViewController {
                 footerView.primaryButton.setPairTitle()
                 lastError = nil
                 loadingText = LocalizedString("Pairing…", comment: "The text of the loading label when pairing")
-            case .pairingRetry:
-                activityIndicator.state = .indeterminantProgress
-                footerView.primaryButton.isEnabled = false
-                footerView.primaryButton.setPairTitle()
-                // continue displaying the loadingText which includes includes a message to reposition the RL
             case .priming(let finishTime):
                 activityIndicator.state = .timedProgress(finishTime: CACurrentMediaTime() + finishTime)
                 footerView.primaryButton.isEnabled = false
@@ -132,32 +129,6 @@ class PairPodSetupViewController: SetupTableViewController {
                 return
             }
             
-            if let commsError = lastError as? PodCommsError, commsError.possibleWeakCommsCause {
-                switch continueState {
-                case .pairing:
-                    // Received a no response error for the initial pairing attempt.
-                    // Replicate the PDM by beeping and displaying a reposition
-                    // suggestion to the user and keep trying to pair (by calling pair() again).
-                    AudioServicesPlayAlertSound(kSystemSoundID_Vibrate)
-                    AudioServicesPlayAlertSound(SystemSound_alarm)
-                    loadingText = LocalizedString("Communications error!  Please reposition the RileyLink or the pod.\n\nPairing...", comment: "The text string to reposition while continuing to pair after a communications error")
-                    self.continueState = .pairingRetry
-                    pair()
-                    return
-                case .pairingRetry:
-                    // Received a no response error after the second first pairing attempt.
-                    // Replicate the PDM by beeping and prompting the user to move
-                    // to a new location and then to try again.
-                    AudioServicesPlayAlertSound(kSystemSoundID_Vibrate)
-                    AudioServicesPlayAlertSound(SystemSound_alarm)
-                    loadingText = LocalizedString("Communications error!  Please move to a new area and try again.", comment: "The text string to move to a new area and try again after pairing fails due to a communications error")
-                    continueState = .initial
-                    return
-                default:
-                    break
-                }
-            }
-
             var errorStrings: [String]
             
             if let error = lastError as? LocalizedError {
@@ -166,13 +137,51 @@ class PairPodSetupViewController: SetupTableViewController {
                 errorStrings = [lastError?.localizedDescription].compactMap { $0 }
             }
             
-            loadingText = errorStrings.joined(separator: ". ") + "."
+            if let commsError = lastError as? PodCommsError, commsError.possibleWeakCommsCause {
+                if previouslyEncounteredWeakComms {
+                    errorStrings.append(LocalizedString("If the problem persists, move to a new area and try again", comment: "Additional pairing recovery suggestion on multiple pairing failures"))
+                }
+                let errMess = errorStrings.joined(separator: ". ")
+
+                // Optionally replicate the PDM pairing UI on weak comms by beeping and displaying a reposition suggestion to
+                // the user and continue trying to pair on the initial attempt and prompt to relocate on the second such problem.
+                if mimicPDMPairingUI {
+                    AudioServicesPlayAlertSound(kSystemSoundID_Vibrate)
+                    AudioServicesPlayAlertSound(SystemSound_alarm)
+                    if !previouslyEncounteredWeakComms {
+                        loadingText = String(format: LocalizedString("Communications error!\n%1$@.\n\nPairing…", comment: "The format string for communciations error while continuing to pair (1: error string)"), errMess)
+                        previouslyEncounteredWeakComms = true
+                        pair()
+                    } else {
+                        loadingText = String(format: LocalizedString("Communications error!\n%1$@.", comment: "The format string for communications error (1: error string)"), errMess)
+                        previouslyEncounteredWeakComms = false
+                        continueState = .initial
+                    }
+                } else {
+                    loadingText = String(format: LocalizedString("%1$@ and try again.", comment: "The format string for communications error (1: error string)"), errMess)
+                    if lastError != nil {
+                        continueState = .initial
+                    }
+                    previouslyEncounteredWeakComms = true
+                }
+                return
+            }
+            
+            let errMess = errorStrings.joined(separator: ". ")
+            if errMess != "" {
+                loadingText = errMess + "."
+            } else {
+                loadingText = ""
+            }
             
             // If we have an error, update the continue state
-            if let podCommsError = lastError as? PodCommsError,
-                case PodCommsError.podFault = podCommsError
-            {
-                continueState = .fault
+            if let podCommsError = lastError as? PodCommsError {
+                switch podCommsError {
+                case .podFault, .activationTimeExceeded:
+                    continueState = .fault
+                default:
+                    continueState = .initial
+                }
             } else if lastError != nil {
                 continueState = .initial
             }
@@ -243,7 +252,7 @@ class PairPodSetupViewController: SetupTableViewController {
 private extension PodCommsError {
     var possibleWeakCommsCause: Bool {
         switch self {
-        case .invalidData, .noResponse:
+        case .invalidData, .noResponse, .invalidAddress, .rssiTooLow, .rssiTooHigh:
             return true
         default:
             return false

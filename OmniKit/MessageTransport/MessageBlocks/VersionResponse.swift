@@ -104,24 +104,14 @@ public struct VersionResponse : MessageBlock {
             throw MessageBlockError.parseError
         }
     }
-}
 
-func assignAddressResponse(response: Message) throws -> VersionResponse {
-    guard let assignAddressResponse = response.messageBlocks[0] as? VersionResponse,
-        assignAddressResponse.data.count == assignAddressVersionLength + 2
-    else {
-        throw MessageError.validationFailed(description: "invalid AssignAddress VersionResponse")
+    public var isAssignAddressVersionResponse: Bool {
+        return self.data.count == assignAddressVersionLength + 2
     }
-    return assignAddressResponse
-}
 
-func setupPodResponse(response: Message) throws -> VersionResponse {
-    guard let setupPodResponse = response.messageBlocks[0] as? VersionResponse,
-        setupPodResponse.data.count == setupPodVersionLength + 2
-    else {
-        throw MessageError.validationFailed(description: "invalid SetupPod VersionResponse")
+    public var isSetupPodVersionResponse: Bool {
+        return self.data.count == setupPodVersionLength + 2
     }
-    return setupPodResponse
 }
 
 extension VersionResponse: CustomDebugStringConvertible {

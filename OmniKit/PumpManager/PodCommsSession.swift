@@ -120,7 +120,7 @@ extension PodCommsError: LocalizedError {
         case .nonceResyncFailed:
             return nil
         case .podSuspended:
-            return nil
+            return LocalizedString("Resume the pod", comment: "Recovery suggestion when pod is suspended")
         case .podFault:
             return nil
         case .commsError:
@@ -133,10 +133,10 @@ extension PodCommsError: LocalizedError {
             return LocalizedString("Please bring only original pod in range or deactivate original pod", comment: "Recovery suggestion on unexpected pod change")
         case .activationTimeExceeded:
             return nil
-        case .rssiTooLow: // always happens if RileyLink too far from pod, but can also occur sometimes at various distances & positions
-            return LocalizedString("Please reposition the RileyLink relative to the pod", comment: "Recovery suggestion when signal strength too low")
-        case .rssiTooHigh: // only occurs when RileyLink is too close to the pod
-            return LocalizedString("Please reposition the RileyLink further from the pod", comment: "Recovery suggestion when signal strength too high")
+        case .rssiTooLow: // occurs when RileyLink is too far from pod for reliable pairing, but can sometimes occur at other distances & positions
+            return LocalizedString("Please reposition the RileyLink relative to the pod", comment: "Recovery suggestion when pairing signal strength too low")
+        case .rssiTooHigh: // only occurs when RileyLink is too close to the pod for reliable pairing
+            return LocalizedString("Please reposition the RileyLink further from the pod", comment: "Recovery suggestion when pairing signal strength too high")
         }
     }
 }

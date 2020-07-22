@@ -23,6 +23,8 @@ class PairPodSetupViewController: SetupTableViewController {
     
     var previouslyEncounteredWeakComms: Bool = false
     
+    var attemptingPairingRetry: Bool = false
+    
     var pumpManager: OmnipodPumpManager! {
         didSet {
             if oldValue == nil && pumpManager != nil {
@@ -101,6 +103,7 @@ class PairPodSetupViewController: SetupTableViewController {
                 activityIndicator.state = .indeterminantProgress
                 footerView.primaryButton.isEnabled = false
                 footerView.primaryButton.setPairTitle()
+                attemptingPairingRetry = false
                 lastError = nil
                 loadingText = LocalizedString("Pairing…", comment: "The text of the loading label when pairing")
             case .priming(let finishTime):
@@ -138,7 +141,7 @@ class PairPodSetupViewController: SetupTableViewController {
             }
             
             if let commsError = lastError as? PodCommsError, commsError.possibleWeakCommsCause {
-                if previouslyEncounteredWeakComms {
+                if previouslyEncounteredWeakComms || attemptingPairingRetry {
                     errorStrings.append(LocalizedString("If the problem persists, move to a new area and try again", comment: "Additional pairing recovery suggestion on multiple pairing failures"))
                 }
                 let errMess = errorStrings.joined(separator: ". ")
@@ -148,21 +151,18 @@ class PairPodSetupViewController: SetupTableViewController {
                 if mimicPDMPairingUI {
                     AudioServicesPlayAlertSound(kSystemSoundID_Vibrate)
                     AudioServicesPlayAlertSound(SystemSound_alarm)
-                    if !previouslyEncounteredWeakComms {
+                    if !attemptingPairingRetry {
                         loadingText = String(format: LocalizedString("Communications error!\n%1$@.\n\nPairing…", comment: "The format string for communciations error while continuing to pair (1: error string)"), errMess)
-                        previouslyEncounteredWeakComms = true
+                        attemptingPairingRetry = true
                         pair()
                     } else {
                         loadingText = String(format: LocalizedString("Communications error!\n%1$@.", comment: "The format string for communications error (1: error string)"), errMess)
-                        previouslyEncounteredWeakComms = false
                         continueState = .initial
                     }
                 } else {
                     loadingText = String(format: LocalizedString("%1$@ and try again.", comment: "The format string for communications error (1: error string)"), errMess)
-                    if lastError != nil {
-                        continueState = .initial
-                    }
                     previouslyEncounteredWeakComms = true
+                    continueState = .initial
                 }
                 return
             }

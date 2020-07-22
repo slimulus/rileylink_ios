@@ -17,8 +17,8 @@ fileprivate var numAutoRetries = 1                                  // number of
 
 fileprivate var enforceRssiLimits: Bool = true                      // whether to enforce RSSI limit checking
 fileprivate var maxRssiAllowed: Int = 59                            // maximum RSSI limit allowed when RSSI limit checking is enabled
-fileprivate var minRssiAllowed: Int = 40                            // minimum RSSI limit allowed when RSSI limit checking is enabled
-fileprivate var numRssiRetries = 5                                  // number of automatic retries on RSSI out of limits
+fileprivate var minRssiAllowed: Int = 30                            // minimum RSSI limit allowed when RSSI limit checking is enabled
+fileprivate var numRssiRetries = 3                                  // number of automatic retries on RSSI out of limits
 
 fileprivate var rssiTesting: Bool = false                           // TESTING, whether to display debug message with RSSI value to user w/o pairing
 fileprivate var alwaysDoAssignAddress: Bool = false                 // TESTING, whether to always do an AssignAddress on pairing retries
@@ -121,7 +121,7 @@ class PodComms: CustomDebugStringConvertible {
             // If we previously had podState, verify that we are still dealing with the same pod
             if let podState = self.podState, (podState.lot != config.lot || podState.tid != config.tid) {
                 // Have a new pod, could be a pod change w/o deactivation (or we're picking up some other pairing pod!)
-                log.error("received pod response with lot %u tid %u, expected lot %u tid %u!", config.lot, config.tid, podState.lot, podState.tid)
+                log.error("Received pod response for [lot %u tid %u], expected [lot %u tid %u]", config.lot, config.tid, podState.lot, podState.tid)
                 throw PodCommsError.podChange
             }
 
@@ -129,27 +129,29 @@ class PodComms: CustomDebugStringConvertible {
                 if enforceRssiLimits {
                     rssiRetries -= 1
                     if rssi < minRssiAllowed {
-                        log.default("rssi value %u is less than minimum rssi allowed value of %u, %u retries left", rssi, minRssiAllowed, rssiRetries)
+                        log.default("RSSI value %u is less than minimum allowed value of %u, %u retries left", rssi, minRssiAllowed, rssiRetries)
                         if rssiRetries > 0 {
                             continue
                         }
                         throw PodCommsError.rssiTooLow
                     }
                     if rssi > maxRssiAllowed {
-                        log.default("rssi value %u is more than maximum rssi allowed value of %u, %u retries left", rssi, maxRssiAllowed, rssiRetries)
+                        log.default("RSSI value %u is more than maximum allowed value of %u, %u retries left", rssi, maxRssiAllowed, rssiRetries)
                         if rssiRetries > 0 {
                             continue
                         }
                         throw PodCommsError.rssiTooHigh
                     }
                 }
+                let rssiStr: String = String(format: "Pod reported signal strength is %u", rssi)
+                log.default("%s", rssiStr)
                 if rssiTesting {
-                    throw PodCommsError.debugFault(str: String(format: "Pod reported signal strength is %u", rssi))
+                    throw PodCommsError.debugFault(str: rssiStr)
                 }
             }
 
             if self.podState == nil {
-                log.default("Assigned address %{public}@ to pod lot %u tid %u, signal strength %u", String(format: "%04X", config.address), config.lot, config.tid, config.rssi ?? 0)
+                log.default("Creating PodState for address %{public}@ [lot %u tid %u], packet #%u, message #%u", String(format: "%04X", config.address), config.lot, config.tid, transport.packetNumber, transport.messageNumber)
                 self.podState = PodState(
                     address: config.address,
                     piVersion: String(describing: config.piVersion),

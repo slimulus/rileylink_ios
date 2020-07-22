@@ -81,7 +81,7 @@ extension PodCommsError: LocalizedError {
         case .activationTimeExceeded:
             return LocalizedString("Activation time exceeded", comment: "Format string for activation time exceeded")
         case .rssiTooLow:
-            return LocalizedString("Signal strength too low", comment: "Format string when RileyLink to pod signal strength is too low")
+            return LocalizedString("Poor signal strength", comment: "Format string when RileyLink to pod signal strength is poor")
         case .rssiTooHigh:
             return LocalizedString("Signal strength too high", comment: "Format string when RileyLink pod signal strength is too high")
         }
@@ -133,9 +133,9 @@ extension PodCommsError: LocalizedError {
             return LocalizedString("Please bring only original pod in range or deactivate original pod", comment: "Recovery suggestion on unexpected pod change")
         case .activationTimeExceeded:
             return nil
-        case .rssiTooLow:
-            return LocalizedString("Please reposition the RileyLink closer to the pod", comment: "Recovery suggestion when signal strength too low")
-        case .rssiTooHigh:
+        case .rssiTooLow: // always happens if RileyLink too far from pod, but can also occur sometimes at various distances & positions
+            return LocalizedString("Please reposition the RileyLink relative to the pod", comment: "Recovery suggestion when signal strength too low")
+        case .rssiTooHigh: // only occurs when RileyLink is too close to the pod
             return LocalizedString("Please reposition the RileyLink further from the pod", comment: "Recovery suggestion when signal strength too high")
         }
     }

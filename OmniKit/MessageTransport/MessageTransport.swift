@@ -17,6 +17,9 @@ var dontDropAckPackets: Bool = true         // TESTING, whether to drop ACK pack
 var dontDropConPackets: Bool = true         // TESTING, whether to drop CON packets for FAKE Lost Packets
 var onlyDropConPackets: Bool = false        // TESTING, whether to only drop incoming CON packets for FAKE Lost Packets
 var dontSendAckPackets: Bool = false        // TESTING, whether to actually send ACK packets in response to data received
+var logFFFFFFFFDrops: Bool = false          // TESTING, whether to log packets that are dropped due to an address of FFFFFFFF
+var logAddressDrops: Bool = false           // TESTING, whether to log any packets that are dropped due to an incorrect address
+var logPacketSeqDrops: Bool = false         // TESTING, whether to log packets that are dropped due to mismatched packet seq #'s
 
 protocol MessageLogger: class {
     // Comms logging
@@ -196,13 +199,20 @@ class PodMessageTransport: MessageTransport {
                 }
 
                 guard candidatePacket.address == packet.address || (candidatePacket.address == 0xFFFFFFFF && acceptFFFFFFFF) else {
-                    log.default("Address %{public}@ does not match %{public}@", String(format: "%04X", candidatePacket.address), String(format: "%04X", packet.address))
+                    log.debug("Address %{public}@ does not match %{public}@, dropping", String(format: "%04X", candidatePacket.address), String(format: "%04X", packet.address))
+                    if logAddressDrops {
+                        messageLogger?.didReceive(candidatePacket.encoded()) // log the dropped packet with the wrong address
+                    } else if logFFFFFFFFDrops && candidatePacket.address == 0xFFFFFFFF {
+                        messageLogger?.didReceive(candidatePacket.encoded()) // log the dropped packet using FFFFFFFF (only can happen if acceptFFFFFFFF == false)
+                    }
                     continue
                 }
                 
                 guard candidatePacket.sequenceNum == ((packet.sequenceNum + 1) & 0b11111) else {
-                    log.default("Sequence %{public}@ does not match %{public}@", String(describing: candidatePacket.sequenceNum), String(describing: ((packet.sequenceNum + 1) & 0b11111)))
-                    messageLogger?.didReceive(candidatePacket.encoded()) // log the packet with the mismatched sequence #
+                    log.debug("Packet sequence #%u does not match expected #%u, dropping", candidatePacket.sequenceNum, (packet.sequenceNum + 1) & 0b11111)
+                    if logPacketSeqDrops {
+                        messageLogger?.didReceive(candidatePacket.encoded()) // log the dropped packet with the mismatched packet sequence #
+                    }
                     continue
                 }
 

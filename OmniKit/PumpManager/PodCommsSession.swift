@@ -334,6 +334,7 @@ public class PodCommsSession {
         let bolusExtraCommand = BolusExtraCommand(units: Pod.primeUnits, timeBetweenPulses: timeBetweenPulses)
         let status: StatusResponse = try send([scheduleCommand, bolusExtraCommand])
         podState.updateFromStatusResponse(status)
+        podState.unfinalizedBolus = nil // don't track prime
         podState.setupProgress = .priming
         return primeFinishTime.timeIntervalSinceNow
     }
@@ -427,6 +428,7 @@ public class PodCommsSession {
         let bolusExtraCommand = BolusExtraCommand(units: Pod.cannulaInsertionUnits, timeBetweenPulses: timeBetweenPulses)
         let status2: StatusResponse = try send([bolusScheduleCommand, bolusExtraCommand])
         podState.updateFromStatusResponse(status2)
+        podState.unfinalizedBolus = nil // don't track cannula insertion
         
         podState.setupProgress = .cannulaInserting
         return insertionWait

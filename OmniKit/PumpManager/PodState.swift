@@ -188,7 +188,8 @@ public struct PodState: RawRepresentable, Equatable, CustomDebugStringConvertibl
         finalizeFinishedDoses()
 
         let deliveryStatus = statusResponse.deliveryStatus
-        if unfinalizedBolus == nil && deliveryStatus.bolusing {
+        // add the unfinalizedBolus here if we don't have one and are currently bolusing in a ready state state
+        if unfinalizedBolus == nil && deliveryStatus.bolusing && statusResponse.podProgressStatus.readyForDelivery {
             // Between bluetooth and the radio and firmware, about 1.2s on average passes before we start tracking
             let commsOffset = TimeInterval(seconds: -1.5)
 

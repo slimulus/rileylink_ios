@@ -313,7 +313,7 @@ public class PodCommsSession {
             let finishSetupReminder = PodAlert.finishSetupReminder
             try configureAlerts([finishSetupReminder])
         } else {
-            // We started prime, but didn't get confirmation somehow, so check status now
+            // We started prime, but didn't get confirmation somehow, so check status
             let status: StatusResponse = try send([GetStatusCommand()])
             podState.updateFromStatusResponse(status)
             if status.podProgressStatus == .priming || status.podProgressStatus == .primingCompleted {
@@ -454,7 +454,7 @@ public class PodCommsSession {
         case certainFailure(error: PodCommsError)
         case uncertainFailure(error: PodCommsError)
     }
-
+    
     public func bolus(units: Double, acknowledgementBeep: Bool = false, completionBeep: Bool = false, programReminderInterval: TimeInterval = 0) -> DeliveryCommandResult {
         
         let timeBetweenPulses = TimeInterval(seconds: Pod.secondsPerBolusPulse)
@@ -465,10 +465,13 @@ public class PodCommsSession {
             return DeliveryCommandResult.certainFailure(error: .unfinalizedBolus)
         }
         
+        // Between bluetooth and the radio and firmware, about 1.2s on average passes before we start tracking
+        let commsOffset = TimeInterval(seconds: -1.5)
+        
         let bolusExtraCommand = BolusExtraCommand(units: units, timeBetweenPulses: timeBetweenPulses, acknowledgementBeep: acknowledgementBeep, completionBeep: completionBeep, programReminderInterval: programReminderInterval)
         do {
             let statusResponse: StatusResponse = try send([bolusScheduleCommand, bolusExtraCommand])
-            podState.updateFromStatusResponse(statusResponse) // will initialize podState.unfinalizedBolus
+            podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
             return DeliveryCommandResult.success(statusResponse: statusResponse)
         } catch PodCommsError.nonceResyncFailed {
             return DeliveryCommandResult.certainFailure(error: PodCommsError.nonceResyncFailed)
@@ -483,8 +486,9 @@ public class PodCommsSession {
                 podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date(), scheduledCertainty: .uncertain)
                 return DeliveryCommandResult.uncertainFailure(error: podCommsError)
             }
-            if podState.unfinalizedBolus != nil {
+            if status.deliveryStatus.bolusing {
                 self.log.debug("getStatus resolved bolus uncertainty (succeeded)")
+                podState.unfinalizedBolus = UnfinalizedDose(bolusAmount: units, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
                 return DeliveryCommandResult.success(statusResponse: status)
             } else {
                 self.log.debug("getStatus resolved bolus uncertainty (failed)")
@@ -651,7 +655,7 @@ public class PodCommsSession {
     }
 
     @discardableResult
-    public func readPulseLogsRequest(podInfoResponseSubType: PodInfoResponseSubType, beepMessage: MessageBlock? = nil) throws -> PodInfoResponse {
+    public func readPodInfo(podInfoResponseSubType: PodInfoResponseSubType, beepMessage: MessageBlock? = nil) throws -> PodInfoResponse {
         var blocksToSend: [MessageBlock] = [GetStatusCommand(podInfoType: podInfoResponseSubType)]
 
         if let beepMessage = beepMessage {
@@ -661,12 +665,13 @@ public class PodCommsSession {
         let messageResponse = try transport.sendMessage(message)
 
         if let podInfoResponseMessageBlock = messageResponse.messageBlocks[0] as? PodInfoResponse {
-            log.default("Pod pulse log: %@", String(describing: podInfoResponseMessageBlock))
+            log.default("Read pod info: %@", String(describing: podInfoResponseMessageBlock))
             return podInfoResponseMessageBlock
-        } else if let fault = messageResponse.fault {
+        }
+        if let fault = messageResponse.fault {
             try throwPodFault(fault: fault) // always throws
         }
-        log.error("Unexpected Pod pulse log response: %@", String(describing: messageResponse.messageBlocks[0]))
+        log.error("Unexpected read pod info response: %@", String(describing: messageResponse.messageBlocks[0]))
         throw PodCommsError.unexpectedResponse(response: messageResponse.messageBlocks[0].blockType)
     }
 

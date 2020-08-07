@@ -713,8 +713,6 @@ extension OmnipodPumpManager {
         self.getPodStatus(storeDosesOnSuccess: false, completion: completion)
     }
 
-    // MARK: - Pump Commands
-
     private func getPodStatus(storeDosesOnSuccess: Bool, completion: ((_ result: PumpManagerResult<StatusResponse>) -> Void)? = nil) {
         guard state.podState?.unfinalizedBolus?.scheduledCertainty == .uncertain || state.podState?.unfinalizedBolus?.isFinished != false else {
             self.log.info("Skipping status request due to unfinalized bolus in progress.")
@@ -743,6 +741,8 @@ extension OmnipodPumpManager {
             }
         }
     }
+
+    // MARK: - Pump Commands
 
     public func acknowledgeAlerts(_ alertsToAcknowledge: AlertSet, completion: @escaping (_ alerts: [AlertSlot: PodAlert]?) -> Void) {
         guard self.hasActivePod else {
@@ -926,26 +926,31 @@ extension OmnipodPumpManager {
         #endif
     }
 
-    private func podStatusString(status: StatusResponse) -> String {
-        var result, str: String
-        var delivered: Double
+    private func podInfoString(podInfoResponse: PodInfoResponse) -> String {
 
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .full
-        formatter.allowedUnits = [.day, .hour, .minute]
-        if let timeStr = formatter.string(from: status.timeActive) {
-            str = timeStr
-        } else {
-            str = String(format: LocalizedString("%1$@ minutes", comment: "The format string for minutes (1: number of minutes string)"), String(describing: Int(status.timeActive / 60)))
+        guard let status = podInfoResponse.podInfo as? PodInfoFaultEvent else {
+            return "podInfo parse error"
         }
-        result = String(format: LocalizedString("Pod Active: %1$@\n", comment: "The format string for Pod Active: (1: Pod active time string)"), str)
 
+        func timeStr(time: TimeInterval) -> String {
+            let formatter = DateComponentsFormatter()
+            formatter.unitsStyle = .full
+            formatter.allowedUnits = [.day, .hour, .minute]
+
+            if let str = formatter.string(from: time) {
+                return str
+            }
+            return String(format: LocalizedString("%1$@ minutes", comment: "The format string for minutes (1: number of minutes string)"), String(describing: Int(time / 60)))
+        }
+
+        var result = String(format: LocalizedString("Pod Active: %1$@\n", comment: "The format string for Pod Active: (1: Pod active time string)"), timeStr(time: status.timeActive))
         result += String(format: LocalizedString("Delivery Status: %1$@\n", comment: "The format string for Delivery Status: (1: delivery status string)"), String(describing: status.deliveryStatus))
 
+        let delivered: Double
         if let lastInsulinMeasurements = self.state.podState?.lastInsulinMeasurements {
-            delivered = lastInsulinMeasurements.delivered
+            delivered = lastInsulinMeasurements.delivered // report the adjusted total without the priming & cannula insertion amounts
         } else {
-            delivered = status.insulin
+            delivered = status.totalInsulinDelivered // report the raw non-adjusted pod value
         }
         result += String(format: LocalizedString("Total Insulin Delivered: %1$@ U\n", comment: "The format string for Total Insulin Delivered: (1: total insulin delivered string)"), delivered.twoDecimals)
 
@@ -953,21 +958,34 @@ extension OmnipodPumpManager {
 
         result += String(format: LocalizedString("Last Bolus Not Delivered: %1$@ U\n", comment: "The format string for Last Bolus Not Delivered: (1: bolus not delivered string)"), status.insulinNotDelivered.twoDecimals)
 
+        let alertString: String
         if let podState = self.state.podState,
             podState.activeAlerts.startIndex != podState.activeAlerts.endIndex
         {
             // generate a more helpful string with the actual alert names
-            str = String(describing: podState.activeAlerts)
+            alertString = String(describing: podState.activeAlerts)
         } else {
-            str = String(describing: status.alerts)
+            alertString = String(describing: status.unacknowledgedAlerts)
         }
-        result += String(format: LocalizedString("Alerts: %1$@\n", comment: "The format string for Alerts: (1: the alerts string)"), str)
+        result += String(format: LocalizedString("Alerts: %1$@\n", comment: "The format string for Alerts: (1: the alerts string)"), alertString)
+
+        result += String(format: LocalizedString("Pod RSSI: %1$u\n", comment: "The format string for the Pod RSSI: (1: RSSI value)"), status.radioRSSI)
+
+        if status.currentStatus.rawValue != 0 {
+            result += "\n" // since we have a fault, report the additional fault related information in a separate section
+            result += String(format: LocalizedString("Fault: %1$@\n", comment: "The format string for a fault: (1: The fault description)"), status.currentStatus.localizedDescription)
+            result += String(format: LocalizedString("Previous pod progress: %1$@\n", comment: "The format string for previous pod progress: (1: previous pod progress string)"), String(describing: status.previousPodProgressStatus))
+            if let faultEventTimeSinceActivation = status.faultEventTimeSinceActivation {
+                result += String(format: LocalizedString("Fault time: %1$@\n", comment: "The format string for fault time: (1: fault time string)"), timeStr(time: faultEventTimeSinceActivation))
+            }
+        }
 
         return result
     }
     
     public func readPodStatus(completion: @escaping (String?) -> Void) {
-        guard self.hasActivePod else {
+        // use hasSetupPod to be able to read pod info from a faulted Pod
+        guard self.hasSetupPod else {
             completion(String(describing: OmnipodPumpManagerError.noPodPaired))
             return
         }
@@ -984,11 +1002,11 @@ extension OmnipodPumpManager {
                 switch result {
                 case .success(let session):
                     let beepMessage = self.confirmationMessage(beepConfigType: .bipBip)
-                    let status = try session.getStatus(beepMessage: beepMessage)
+                    let podInfoResponse = try session.readPodInfo(podInfoResponseSubType: .faultEvents, beepMessage: beepMessage)
                     session.dosesForStorage({ (doses) -> Bool in
                         self.store(doses: doses, in: session)
                     })
-                    completion(self.podStatusString(status: status))
+                    completion(self.podInfoString(podInfoResponse: podInfoResponse))
                 case .failure(let error):
                     throw error
                 }
@@ -1075,13 +1093,13 @@ extension OmnipodPumpManager {
             case .success(let session):
                 do {
                     // read the most recent 50 entries from the pulse log
-                    let podInfoResponse1 = try session.readPulseLogsRequest(podInfoResponseSubType: .pulseLogRecent, beepMessage: beepMessage)
+                    let podInfoResponse1 = try session.readPodInfo(podInfoResponseSubType: .pulseLogRecent, beepMessage: beepMessage)
                     let podInfoPulseLogRecent = podInfoResponse1.podInfo as! PodInfoPulseLogRecent
                     var lastPulseNumber = Int(podInfoPulseLogRecent.indexLastEntry)
                     var str = pulseLogString(pulseLogEntries: podInfoPulseLogRecent.pulseLog, lastPulseNumber: lastPulseNumber)
 
                     // read up to the previous 50 entries from the pulse log
-                    let podInfoResponse2 = try session.readPulseLogsRequest(podInfoResponseSubType: .dumpOlderPulseLog, beepMessage: beepMessage)
+                    let podInfoResponse2 = try session.readPodInfo(podInfoResponseSubType: .dumpOlderPulseLog, beepMessage: beepMessage)
                     let podInfoPulseLogPrevious = podInfoResponse2.podInfo as! PodInfoPulseLogPrevious
                     lastPulseNumber -= podInfoPulseLogRecent.pulseLog.count
                     str += pulseLogString(pulseLogEntries: podInfoPulseLogPrevious.pulseLog, lastPulseNumber: lastPulseNumber)

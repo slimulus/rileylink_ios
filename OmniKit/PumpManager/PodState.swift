@@ -188,13 +188,9 @@ public struct PodState: RawRepresentable, Equatable, CustomDebugStringConvertibl
         finalizeFinishedDoses()
 
         let deliveryStatus = statusResponse.deliveryStatus
-        // add the unfinalizedBolus here if we don't have one and are currently bolusing in a ready state state
+        // add an unfinalizedBolus here if we don't have one and are currently bolusing in a ready state
         if unfinalizedBolus == nil && deliveryStatus.bolusing && statusResponse.podProgressStatus.readyForDelivery {
-            // Between bluetooth and the radio and firmware, about 1.2s on average passes before we start tracking
-            let commsOffset = TimeInterval(seconds: -1.5)
-
-            // Just verified that a bolus had actually been started (could even potentially be after a Loop restart)
-            unfinalizedBolus = UnfinalizedDose(bolusAmount: statusResponse.insulinNotDelivered, startTime: Date().addingTimeInterval(commsOffset), scheduledCertainty: .certain)
+            unfinalizedBolus = UnfinalizedDose(bolusAmount: statusResponse.insulinNotDelivered, startTime: Date(), scheduledCertainty: .certain)
         } else if let bolus = unfinalizedBolus, bolus.scheduledCertainty == .uncertain {
             if deliveryStatus.bolusing {
                 // Bolus did schedule

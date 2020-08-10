@@ -969,7 +969,9 @@ extension OmnipodPumpManager {
         }
         result += String(format: LocalizedString("Alerts: %1$@\n", comment: "The format string for Alerts: (1: the alerts string)"), alertString)
 
-        result += String(format: LocalizedString("Pod RSSI: %1$u\n", comment: "The format string for the Pod RSSI: (1: RSSI value)"), status.radioRSSI)
+        result += String(format: LocalizedString("Receiver Low Gain: %1$u\n", comment: "The format string for Receiver Low Gain: (1: Receiver Low Gain value)"), status.receiverLowGain)
+
+        result += String(format: LocalizedString("Received Signal Strength Indicator: %1$u\n", comment: "The format string for Received Signal Strength Indicator: (1: RSSI value)"), status.radioRSSI)
 
         if status.currentStatus.rawValue != 0 {
             result += "\n" // since we have a fault, report the additional fault related information in a separate section
